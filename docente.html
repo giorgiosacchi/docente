@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <title>Pannello Docente</title>
+    <style>
+        body { font-family: sans-serif; background-color: #f4f6f9; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        h1 { color: #1a365d; }
+        .card { background: #edf2f7; padding: 15px; border-radius: 6px; margin-bottom: 20px; }
+        input[type="file"] { width: 100%; padding: 10px; background: white; border-radius: 4px; }
+        button { background-color: #38a169; color: white; padding: 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; font-size: 16px; margin-top: 10px; }
+        button.danger { background-color: #e53e3e; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; background: white; }
+        th, td { padding: 8px; text-align: left; border-bottom: 1px solid #e2e8f0; font-size: 14px; }
+        th { background-color: #ebf8ff; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Pannello Docente: Aggiornamento CSV</h1>
+    
+    <h3>1. Carica il File dell'Esame (.csv)</h3>
+    <div class="card">
+        <input type="file" id="csv-file" accept=".csv">
+    </div>
+
+    <h3>2. Carica i file .json ricevuti dagli studenti (anche insieme)</h3>
+    <div class="card">
+        <input type="file" id="import-json" accept=".json" multiple onchange="importJsons(event)">
+        <table id="mapping-table">
+            <thead><tr><th>Vecchia Matricola</th><th>Nuova Matricola</th><th>Studente</th></tr></thead>
+            <tbody></tbody>
+        </table>
+        <button class="danger" style="width:auto; font-size:12px; padding:5px;" onclick="clearAll()">Svuota Tabella</button>
+    </div>
+
+    <h3>3. Elabora e Scarica</h3>
+    <button id="process-btn" onclick="processCSV()" style="background-color: #3182ce;">Sostituisci Matricole e Scarica Nuovo CSV</button>
+</div>
+
+<script>
+    let mappings = {}; let csvData = ""; let csvName = "";
+    window.onload = function() {
+        if (localStorage.getItem('doc_maps')) { mappings = JSON.parse(localStorage.getItem('doc_maps')); renderTable(); }
+        document.getElementById('csv-file').addEventListener('change', function(e) {
+            let file = e.target.files[0]; if (!file) return;
+            csvName = file.name; let r = new FileReader();
+            r.onload = function(evt) { csvData = evt.target.result; }; r.readAsText(file);
+        });
+    };
+    function importJsons(e) {
+        let files = e.target.files; if (!files.length) return;
+        let c = 0;
+        for (let i = 0; i < files.length; i++) {
+            let r = new FileReader();
+            r.onload = function(evt) {
+                try { Object.assign(mappings, JSON.parse(evt.target.result)); c++;
+                     if(c === files.length) { localStorage.setItem('doc_maps', JSON.stringify(mappings)); renderTable(); }
+                } catch(err) {}
+            }; r.readAsText(files[i]);
+        }
+    }
+    function renderTable() {
+        let b = document.querySelector('#mapping-table tbody'); b.innerHTML = "";
+        Object.keys(mappings).forEach(k => {
+            let tr = document.createElement('tr');
+            tr.innerHTML = `<td>${k}</td><td style="color:green;font-weight:bold;">${mappings[k].newMat}</td><td>${mappings[k].name}</td>`;
+            b.appendChild(tr);
+        });
+    }
+    function clearAll() { mappings = {}; localStorage.removeItem('doc_maps'); renderTable(); }
+    function processCSV() {
+        if (!csvData) { alert("Carica prima il file CSV."); return; }
+        let delim = csvData.includes(';') ? ';' : ',';
+        let lines = csvData.split(/\r?\n/);
+        let headers = lines[0].split(delim).map(h => h.replace(/"/g, '').trim().toLowerCase());
+        let idx = headers.indexOf("matricola");
+        if (idx === -1) { alert("Colonna 'Matricola' non trovata."); return; }
+        
+        let out = [lines[0]];
+        for (let i = 1; i < lines.length; i++) {
+            if (!lines[i].trim()) continue;
+            let cells = lines[i].split(delim);
+            if (cells.length > idx) {
+                let m = cells[idx].replace(/"/g, '').trim().toUpperCase();
+                if (mappings[m]) { cells[idx] = cells[idx].includes('"') ? `"${mappings[m].newMat}"` : mappings[m].newMat; }
+            }
+            out.push(cells.join(delim));
+        }
+        let blob = new Blob([out.join("\n")], { type: 'text/csv;charset=utf-8;' });
+        let a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+        a.download = csvName.replace(".csv", "_aggiornato.csv"); a.click();
+    }
+</script>
+</body>
+</html>
